@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Route on Google Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+
+         /* ポップアップの基本スタイル */
+    .popup {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 300px;
+        padding: 20px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        background-color: white;
+        border: 1px solid #ccc;
+        z-index: 1000;
+        display: none; /* 初期状態では非表示 */
+    }
+    /* ポップアップの閉じるボタン */
+    .close-btn {
+        float: right;
+        cursor: pointer;
+    }
+
+    @media (max-width: 600px) {
+        #map {
+            height: 200px;
+        }
+        .popup {
+            width: 90%;
+            padding: 10px;
+        }
+    }
+
+
+    </style>
+</head>
+<body>
+    <h1>よはっく</h1>
+    <h3>-最適化されない暮らしを導く-</h3>
+    <h2>Click on the map to select the destination</h2>
+    
+    <!-- Map Container -->
+   
+    <!-- Notification Area -->
+    <div id="notificationArea"></div>
+
+    <div id="popup" class="popup">
+        <span class="close-btn" onclick="closePopup()">✖</span>
+        <h2>通知</h2>
+        <p>５分経過しました。現在地を設定し直してください。</p>
+    </div>
+
+   <div id="content"></div>
+<input type="text" id="inputEndTime" placeholder="Enter end time (例： 17:00)">
+<button onclick="setEndTime()">Set Time</button>
+<p id="timeDifferenceResult"></p> <!-- Time difference result placeholder -->
+<p id="currentTimeDisplay"></p> <!-- Current time display -->
+<p id="routeResult"></p> <!-- Route calculation result -->
+
+<!-- Google Maps API Script -->
+<script>
+    function setEndTime() {
+        const endTime = document.getElementById('inputEndTime').value;
+        localStorage.setItem('endTime', endTime); // Save end time to local storage
+        console.log("End Time is set to: " + endTime);
+        loadMap(); // Load map directly after storing time
+    }
+
+    function loadMap() {
+        document.getElementById('content').innerHTML = '<div id="map" style="height: 400px; width: 100%;"></div>';
+        initMap(); // Initialize your map here
+    }
+      
+        
+        let map, infoWindow, originMarker, destinationMarker;
+        let origin, destination;
+        let clickCount = 0; // To track number of clicks on the map
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+        center: {lat: 35.681236, lng: 139.767125}, // Center map on Tokyo
+        zoom: 10
+    });
+
+    // Initialize origin marker at map center or user location
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var pos = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            initializeOriginMarker(pos); // Initialize origin marker at user's current location
+        }, function() {
+            initializeOriginMarker(map.getCenter().toJSON()); // Fallback to map center if access to geolocation is denied
+        });
+    } else {
+        initializeOriginMarker(map.getCenter().toJSON()); // Fallback if browser doesn't support Geolocation
+    }
+
+    map.addListener('click', function(mapsMouseEvent) {
+        setDestination(mapsMouseEvent.latLng.toJSON());
+    });
+
+    // Continuously update origin based on geolocation
+    setInterval(updateOriginByGeolocation, 300000); // Update every 300 seconds
+}
+
+function initializeOriginMarker(position) {
+    origin = position;
+    if (!originMarker) {
+        originMarker = new google.maps.Marker({
+            position: origin,
+            map: map,
+            title: "Origin",
+            icon: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+            draggable: true
+        });
+    } else {
+        originMarker.setPosition(origin);
+    }
+    
+    google.maps.event.addListener(originMarker, 'dragend', function() {
+        origin = originMarker.getPosition().toJSON();
+        if (destination) {
+            displayRoute(origin, destination, map);
+        }
+    });
+
+    if (destination) {
+        displayRoute(origin, destination, map);
+    }
+}
+
+function updateOriginByGeolocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var newPos = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            originMarker.setPosition(newPos);
+            origin = newPos;
+            if (destination) {
+                displayRoute(origin, destination, map);
+            }
+        });
+    }
+}
+
+function setDestination(position) {
+    if (!destinationMarker) {
+        destination = position;
+        destinationMarker = new google.maps.Marker({
+            position: destination,
+            map: map,
+            title: "Destination",
+            icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+        });
+        displayRoute(origin, destination, map);
+    }
+} 
+            
+        // ポップアップを表示する関数
+function showPopup() {
+    document.getElementById('popup').style.display = 'block';
+}
+
+// ポップアップを閉じる関数
+function closePopup() {
+    document.getElementById('popup').style.display = 'none';
+}
+
+// 5分ごとにポップアップを表示
+setInterval(showPopup, 300000); // 300000ミリ秒（5分）ごと
+        
+
+        function convertTime(duration) {
+            var result = /(\d+)(時間)?(\d+)?分?/.exec(duration);
+            var hours = result && result[1] ? parseInt(result[1], 10) : 0;
+            var minutes = result && result[3] ? parseInt(result[3], 10) : 0;
+            return result[2] === "時間" ? hours * 60 + minutes : hours; // Correct handling of hours and minutes
+        }
+
+        function calculateTimeDifference(endTime) {
+            var currentTime = new Date();
+            document.getElementById("currentTimeDisplay").innerText = "現在時刻: " + currentTime.toLocaleTimeString();
+            var endTimeDate = new Date(currentTime.toDateString() + ' ' + endTime);
+            var timeDiff = endTimeDate - currentTime;
+
+            if (timeDiff < 0) { // If end time is past, calculate for the next day
+                endTimeDate.setDate(endTimeDate.getDate() + 1);
+                timeDiff = endTimeDate - currentTime;
+            }
+
+            return Math.floor(timeDiff / 60000); // Convert difference to minutes
+        }
+
+        function displayTimeDifference() {
+            var inputEndTime = document.getElementById("inputEndTime").value;
+            var minutes = calculateTimeDifference(inputEndTime);
+            document.getElementById("timeDifferenceResult").innerText = "現在から終了時刻まで " + minutes + " 分です。";
+        }
+
+        function displayRoute(origin, destination, map) {
+            let directionsService = new google.maps.DirectionsService();
+            let directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+
+            let request = {
+                origin: origin,
+                destination: destination,
+                travelMode: 'WALKING'
+            };
+
+            directionsService.route(request, function(result, status) {
+                if (status === 'OK') {
+                    directionsRenderer.setDirections(result);
+                    let duration = result.routes[0].legs[0].duration.text;
+                    let minutesRequired = convertTime(duration);
+                    let inputEndTime = document.getElementById("inputEndTime").value;
+                    let timeRemaining = calculateTimeDifference(inputEndTime);
+
+                    let judge = minutesRequired <= timeRemaining ? "間に合います" : "間に合いません、急ぎましょう";
+                    document.getElementById("routeResult").innerText = "所要時間は " + duration + " です、" + judge;
+                } else {
+                    alert("Directions request failed due to " + status);
+                }
+            });
+        }
+    </script>
+    <script>
+	 document.addEventListener('DOMContentLoaded', function() {
+            var setTimeButton = document.getElementById('setTimeButton');
+            if (setTimeButton) {
+                // タッチデバイス用
+                setTimeButton.addEventListener('touchend', function(event) {
+                    event.preventDefault();  // 画面のスクロールなどのデフォルトの挙動を防止
+                    setEndTime();
+                });
+
+                // マウスクリック用
+                setTimeButton.addEventListener('click', function(event) {
+                    setEndTime();
+                });
+            }
+        });
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBdwyyX_C68If8L3fkyJT2DKaAMkZlKdhk&callback=initMap"></script>
+</body>
+</html>
